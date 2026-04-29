@@ -39,6 +39,13 @@ const router = Router();
  *           type: string
  *           example: en
  *         description: Language code used for localized suggestions.
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: number
+ *           example: 5
+ *         description: Maximum number of suggestions per query (1 to 20)
  *     responses:
  *       200:
  *         description: Successful keyword suggestion response
@@ -92,12 +99,13 @@ const router = Router();
  */
 router.get('/keyword/suggestions', async (req, res, next) => {
   try {
-    const { q, country, language } = req.query;
+    const { q, country, language, limit } = req.query;
 
     const result = await getKeywordSuggestions(
       String(q || ''),
       String(country || 'US'),
-      String(language || 'en')
+      String(language || 'en'),
+      Number(limit || 10)
     );
 
     return res.json({

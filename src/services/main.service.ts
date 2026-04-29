@@ -1,9 +1,4 @@
-﻿export function exampleService() {
-  return {
-    message: 'API is working',
-  };
-}
-import axios from 'axios';
+﻿import axios from 'axios';
 import NodeCache from 'node-cache';
 import {
   KeywordSuggestionItem,
@@ -21,12 +16,24 @@ function normalizeQuery(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function cleanSuggestions(query: string, suggestions: string[]): string[] {
+  const normalizedQuery = query.toLowerCase();
+
+  return Array.from(
+    new Set(
+      suggestions
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .filter((s) => s.toLowerCase() !== normalizedQuery)
+    )
+  ).sort((a, b) => a.length - b.length);
+}
+
 function parseQueries(query: string): string[] {
   return query
     .split(',')
     .map((item) => normalizeQuery(item))
-    .filter(Boolean)
-    .slice(0, 10);
+    .filter(Boolean);
 }
 
 function normalizeCountry(country?: string): string {
@@ -64,59 +71,73 @@ async function fetchGoogleSuggestions(
 export async function getKeywordSuggestions(
   query: string,
   country?: string,
-  language?: string
+  language?: string,
+  limit?: number
 ): Promise<KeywordSuggestionResponse> {
   if (!query || !query.trim()) {
     throw new Error('Query parameter is required');
   }
-
+  const startTime = Date.now();
   const parsedQueries = parseQueries(query);
 
   if (parsedQueries.length === 0) {
     throw new Error('At least one valid query is required');
   }
 
+  if (parsedQueries.length > 10) {
+    throw new Error('Maximum 10 queries allowed per request');
+  }
+
   const normalizedCountry = normalizeCountry(country);
   const normalizedLanguage = normalizeLanguage(language);
+  const normalizedLimit = Math.min(Math.max(Number(limit || 10), 1), 20);
 
-  const results: KeywordSuggestionItem[] = [];
-  let allResultsFromCache = true;
+  const resultsWithCache = await Promise.all(
+    parsedQueries.map(async (currentQuery) => {
+      const cacheKey = buildCacheKey(
+        currentQuery,
+        normalizedCountry,
+        normalizedLanguage
+      );
 
-  for (const currentQuery of parsedQueries) {
-    const cacheKey = buildCacheKey(
-      currentQuery,
-      normalizedCountry,
-      normalizedLanguage
-    );
+      const cachedSuggestions = keywordCache.get<string[]>(cacheKey);
 
-    const cachedSuggestions = keywordCache.get<string[]>(cacheKey);
+      if (cachedSuggestions) {
+        return {
+          query: currentQuery,
+          suggestions: cachedSuggestions,
+          count: cachedSuggestions.length,
+          cached: true,
+        };
+      }
 
-    if (cachedSuggestions) {
-      results.push({
+      const rawSuggestions = await fetchGoogleSuggestions(
+        currentQuery,
+        normalizedCountry,
+        normalizedLanguage
+      );
+
+      const suggestions = cleanSuggestions(currentQuery, rawSuggestions).slice(
+        0,
+        normalizedLimit
+      );
+
+      keywordCache.set(cacheKey, suggestions);
+
+      return {
         query: currentQuery,
-        suggestions: cachedSuggestions,
-        count: cachedSuggestions.length,
-      });
+        suggestions,
+        count: suggestions.length,
+        cached: false,
+      };
+    })
+  );
 
-      continue;
-    }
+  const results: KeywordSuggestionItem[] = resultsWithCache.map(
+    ({ cached, ...item }) => item
+  );
 
-    allResultsFromCache = false;
-
-    const suggestions = await fetchGoogleSuggestions(
-      currentQuery,
-      normalizedCountry,
-      normalizedLanguage
-    );
-
-    keywordCache.set(cacheKey, suggestions);
-
-    results.push({
-      query: currentQuery,
-      suggestions,
-      count: suggestions.length,
-    });
-  }
+  const allResultsFromCache = resultsWithCache.every((item) => item.cached);
 
   return {
     results,
@@ -126,6 +147,7 @@ export async function getKeywordSuggestions(
       language: normalizedLanguage,
       source: 'google_autocomplete',
       cached: allResultsFromCache,
+      processingTimeMs: Date.now() - startTime,
     },
   };
 }

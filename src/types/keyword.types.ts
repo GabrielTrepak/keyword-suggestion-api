@@ -12,5 +12,6 @@ export interface KeywordSuggestionResponse {
     language: string;
     source: string;
     cached: boolean;
+    processingTimeMs: number;
   };
 }
