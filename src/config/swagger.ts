@@ -1,16 +1,19 @@
 ﻿import swaggerJsdoc from 'swagger-jsdoc';
 
+const serverUrl = process.env.SERVER_URL || 'http://localhost:3000';
+
 const options: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.0',
     info: {
       title: 'SEO Keyword Suggestion API',
       version: '1.0.0',
-      description: 'REST API built with Node.js, TypeScript and Express.',
+      description:
+        'A fast SEO keyword suggestion API powered by autocomplete data. Supports multiple queries, country targeting, language targeting, and caching.',
     },
     servers: [
       {
-        url: 'http://localhost:3000',
+        url: serverUrl,
       },
     ],
   },
